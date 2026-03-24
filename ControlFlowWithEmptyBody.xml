@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/SplashScreen.kt</file>
+  <line>51</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.SplashActivity void onCreate(android.os.Bundle savedInstanceState)" />
+  <problem_class id="ControlFlowWithEmptyBody" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Control flow with empty body</problem_class>
+  <description>'if' has empty body</description>
+  <highlighted_element>if</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>2</length>
+</problem>
+</problems>

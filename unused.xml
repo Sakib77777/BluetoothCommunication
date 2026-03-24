@@ -1,0 +1,50 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/BluetoothChatManager.kt</file>
+  <line>33</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.BLEState.Error Error(java.lang.String message)" />
+  <problem_class id="unused" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused declaration</problem_class>
+  <hints>
+    <hint value="message" />
+  </hints>
+  <description>Parameter &lt;code&gt;message&lt;/code&gt; is not used</description>
+  <highlighted_element>message</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/ChatScreen.kt</file>
+  <line>121</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.ChatScreenKt void ChatScreen(java.lang.String contactName, java.lang.String contactAvatar, java.lang.String contactTag, java.lang.String myName, java.lang.String myAvatar, java.util.List&lt;com.example.bluetoothcommunication.ChatMessage&gt; btMessages, javax.crypto.SecretKey encryptionKey, kotlin.jvm.functions.Function1&lt;? super java.lang.String,kotlin.Unit&gt; onSendMessage, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onBackClick)" />
+  <problem_class id="unused" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused declaration</problem_class>
+  <hints>
+    <hint value="myName" />
+  </hints>
+  <description>Parameter &lt;code&gt;myName&lt;/code&gt; is not used</description>
+  <highlighted_element>myName</highlighted_element>
+  <language>kotlin</language>
+  <offset>4</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/ChatScreen.kt</file>
+  <line>122</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.ChatScreenKt void ChatScreen(java.lang.String contactName, java.lang.String contactAvatar, java.lang.String contactTag, java.lang.String myName, java.lang.String myAvatar, java.util.List&lt;com.example.bluetoothcommunication.ChatMessage&gt; btMessages, javax.crypto.SecretKey encryptionKey, kotlin.jvm.functions.Function1&lt;? super java.lang.String,kotlin.Unit&gt; onSendMessage, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onBackClick)" />
+  <problem_class id="unused" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused declaration</problem_class>
+  <hints>
+    <hint value="myAvatar" />
+  </hints>
+  <description>Parameter &lt;code&gt;myAvatar&lt;/code&gt; is not used</description>
+  <highlighted_element>myAvatar</highlighted_element>
+  <language>kotlin</language>
+  <offset>4</offset>
+  <length>8</length>
+</problem>
+</problems>

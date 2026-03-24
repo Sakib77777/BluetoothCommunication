@@ -1,0 +1,67 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml</file>
+  <line>36</line>
+  <module>BluetoothCommunication.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidLintDiscouragedApi" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Using discouraged APIs</problem_class>
+  <hints />
+  <description>&lt;html&gt;Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios.&lt;/html&gt;</description>
+  <highlighted_element>android:screenOrientation=&quot;portrait&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>12</offset>
+  <length>36</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml</file>
+  <line>47</line>
+  <module>BluetoothCommunication.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidLintDiscouragedApi" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Using discouraged APIs</problem_class>
+  <hints />
+  <description>&lt;html&gt;Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios.&lt;/html&gt;</description>
+  <highlighted_element>android:screenOrientation=&quot;portrait&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>12</offset>
+  <length>36</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml</file>
+  <line>53</line>
+  <module>BluetoothCommunication.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidLintDiscouragedApi" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Using discouraged APIs</problem_class>
+  <hints />
+  <description>&lt;html&gt;Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios.&lt;/html&gt;</description>
+  <highlighted_element>android:screenOrientation=&quot;portrait&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>12</offset>
+  <length>36</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml</file>
+  <line>59</line>
+  <module>BluetoothCommunication.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidLintDiscouragedApi" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Using discouraged APIs</problem_class>
+  <hints />
+  <description>&lt;html&gt;Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios.&lt;/html&gt;</description>
+  <highlighted_element>android:screenOrientation=&quot;portrait&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>12</offset>
+  <length>36</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml</file>
+  <line>65</line>
+  <module>BluetoothCommunication.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidLintDiscouragedApi" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Using discouraged APIs</problem_class>
+  <hints />
+  <description>&lt;html&gt;Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios.&lt;/html&gt;</description>
+  <highlighted_element>android:screenOrientation=&quot;portrait&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>12</offset>
+  <length>36</length>
+</problem>
+</problems>

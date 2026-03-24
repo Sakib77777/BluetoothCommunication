@@ -1,0 +1,80 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/ChatScreen.kt</file>
+  <line>226</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.ChatScreenKt void ChatScreen(java.lang.String contactName, java.lang.String contactAvatar, java.lang.String contactTag, java.lang.String myName, java.lang.String myAvatar, java.util.List&lt;com.example.bluetoothcommunication.ChatMessage&gt; btMessages, javax.crypto.SecretKey encryptionKey, kotlin.jvm.functions.Function1&lt;? super java.lang.String,kotlin.Unit&gt; onSendMessage, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onBackClick)" />
+  <problem_class id="AssignedValueIsNeverRead" severity="WARNING" attribute_key="NOT_USED_ELEMENT_ATTRIBUTES">Assigned value is never read</problem_class>
+  <description>Assigned value is never read</description>
+  <highlighted_element>startAnim</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/DeviceDiscoveryScreen.kt</file>
+  <line>231</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.DeviceDiscoveryScreenKt void DeviceDiscoveryScreen(java.util.List&lt;com.example.bluetoothcommunication.DiscoveredDevice&gt; realDevices, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onStartScan, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onStopScan, kotlin.jvm.functions.Function1&lt;? super com.example.bluetoothcommunication.DiscoveredDevice,kotlin.Unit&gt; onDeviceConnect, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onBackClick)" />
+  <problem_class id="AssignedValueIsNeverRead" severity="WARNING" attribute_key="NOT_USED_ELEMENT_ATTRIBUTES">Assigned value is never read</problem_class>
+  <description>Assigned value is never read</description>
+  <highlighted_element>scanProgress</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>12</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/DeviceDiscoveryScreen.kt</file>
+  <line>243</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.DeviceDiscoveryScreenKt void DeviceDiscoveryScreen(java.util.List&lt;com.example.bluetoothcommunication.DiscoveredDevice&gt; realDevices, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onStartScan, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onStopScan, kotlin.jvm.functions.Function1&lt;? super com.example.bluetoothcommunication.DiscoveredDevice,kotlin.Unit&gt; onDeviceConnect, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onBackClick)" />
+  <problem_class id="AssignedValueIsNeverRead" severity="WARNING" attribute_key="NOT_USED_ELEMENT_ATTRIBUTES">Assigned value is never read</problem_class>
+  <description>Assigned value is never read</description>
+  <highlighted_element>startAnim</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/HomeScreen.kt</file>
+  <line>128</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.HomeScreenKt void HomeScreen(java.lang.String myName, java.lang.String myAvatar, java.lang.String myTag, java.lang.String myFullUsername, java.util.List&lt;? extends ChatContact&gt; contacts, kotlin.jvm.functions.Function1&lt;? super ChatContact,kotlin.Unit&gt; onChatClick, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onScanClick)" />
+  <problem_class id="AssignedValueIsNeverRead" severity="WARNING" attribute_key="NOT_USED_ELEMENT_ATTRIBUTES">Assigned value is never read</problem_class>
+  <description>Assigned value is never read</description>
+  <highlighted_element>startAnim</highlighted_element>
+  <language>kotlin</language>
+  <offset>39</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/SplashScreen.kt</file>
+  <line>145</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.SplashScreenKt void SplashScreenUI(kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onFinished)" />
+  <problem_class id="AssignedValueIsNeverRead" severity="WARNING" attribute_key="NOT_USED_ELEMENT_ATTRIBUTES">Assigned value is never read</problem_class>
+  <description>Assigned value is never read</description>
+  <highlighted_element>startAnimation</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>14</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/UsernameSetupScreen.kt</file>
+  <line>159</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="method" FQNAME="com.example.bluetoothcommunication.UsernameSetupScreenKt void UsernameSetupScreen(kotlin.jvm.functions.Function2&lt;? super java.lang.String,? super java.lang.String,kotlin.Unit&gt; onContinue)" />
+  <problem_class id="AssignedValueIsNeverRead" severity="WARNING" attribute_key="NOT_USED_ELEMENT_ATTRIBUTES">Assigned value is never read</problem_class>
+  <description>Assigned value is never read</description>
+  <highlighted_element>startAnim</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>9</length>
+</problem>
+</problems>

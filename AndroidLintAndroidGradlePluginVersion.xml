@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties</file>
+  <line>5</line>
+  <module>BluetoothCommunication</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" />
+  <problem_class id="AndroidLintAndroidGradlePluginVersion" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Obsolete Android Gradle Plugin Version</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of Gradle than 9.3.1 is available: 9.4.0&lt;/html&gt;</description>
+  <highlighted_element>https\://services.gradle.org/distributions/gradle-9.3.1-bin.zip</highlighted_element>
+  <language>Properties</language>
+  <offset>16</offset>
+  <length>63</length>
+</problem>
+</problems>

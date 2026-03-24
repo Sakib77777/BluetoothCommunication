@@ -1,0 +1,16 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/UsernameSetupScreen.kt</file>
+  <line>55</line>
+  <module>BluetoothCommunication.app.main</module>
+  <package>com.example.bluetoothcommunication</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/com/example/bluetoothcommunication/UsernameSetupScreen.kt" />
+  <problem_class id="AndroidLintHardwareIds" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Hardware Id Usage</problem_class>
+  <hints />
+  <description>&lt;html&gt;Using &lt;code&gt;getString&lt;/code&gt; to get device identifiers is not recommended&lt;/html&gt;</description>
+  <highlighted_element>Settings.Secure.getString( context.contentResolver, Settings.Secure.ANDROID_ID )</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>100</length>
+</problem>
+</problems>
