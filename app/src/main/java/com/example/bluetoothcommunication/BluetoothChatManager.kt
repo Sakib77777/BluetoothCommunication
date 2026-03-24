@@ -62,11 +62,9 @@ class BluetoothChatManager(private val context: Context) {
 
     // My own address
     private var myAddress     : String = ""
-    private var myFullUsername: String = ""  // "Name#TAG" — used to identify messages for us
+    private var myFullUsername: String = ""
 
-    // Continuous scan handler — restarts scan every 25s to bypass Android's
-    // 30-second scan timeout without triggering the throttle (Android kills
-    // scans that run exactly 30s repeatedly too quickly)
+    // Continuous scan handler
     private val scanHandler    = Handler(Looper.getMainLooper())
     private var isScanning     = false
     private var scanRestartJob : Runnable? = null
@@ -78,14 +76,12 @@ class BluetoothChatManager(private val context: Context) {
     private val _receivedMessages  = MutableStateFlow<List<ChatMessage>>(emptyList())
     val receivedMessages: StateFlow<List<ChatMessage>> = _receivedMessages
 
-    // Separate flow for broadcast messages (plain text, shown in HomeScreen)
     private val _broadcastMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val broadcastMessages: StateFlow<List<ChatMessage>> = _broadcastMessages
 
     private val _connectionState = MutableStateFlow("Disconnected")
     val connectionState: StateFlow<String> = _connectionState
 
-    // ── Online count derived from discovered devices ───────────────────────────
     val onlineCount: Int get() = _discoveredDevices.value.size
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -103,7 +99,7 @@ class BluetoothChatManager(private val context: Context) {
     // ─────────────────────────────────────────────────────────────────────────
     fun setupGattServer() {
         if (!hasPermissions()) return
-        if (gattServer != null) return // already set up
+        if (gattServer != null) return
 
         gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
 
@@ -140,7 +136,7 @@ class BluetoothChatManager(private val context: Context) {
         bleAdvertiser          = bluetoothAdapter?.bluetoothLeAdvertiser
         bluetoothAdapter?.name = myUsername.take(20)
         myAddress              = bluetoothAdapter?.address ?: ""
-        myFullUsername         = myUsername   // store for recipient matching
+        myFullUsername         = myUsername
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
@@ -173,13 +169,6 @@ class BluetoothChatManager(private val context: Context) {
 
     // ─────────────────────────────────────────────────────────────────────────
     // CONTINUOUS SCANNING
-    //
-    // Android imposes a ~30s scan limit before throttling. We work around it
-    // by stopping and restarting every 25 seconds. The device list is kept
-    // across restarts so contacts don't disappear during the brief gap.
-    //
-    // Devices that haven't been seen for 60s are removed from the list
-    // (considered offline).
     // ─────────────────────────────────────────────────────────────────────────
     fun startContinuousScanning() {
         if (!hasPermissions() || !isBluetoothEnabled()) return
@@ -192,7 +181,6 @@ class BluetoothChatManager(private val context: Context) {
     private fun doStartScan() {
         if (!hasPermissions()) return
         bleScanner = bluetoothAdapter?.bluetoothLeScanner
-        // Stop any existing scan first to prevent SCAN_FAILED_ALREADY_STARTED (error code 1)
         try { bleScanner?.stopScan(scanCallback) } catch (_: Exception) {}
 
         val filter   = ScanFilter.Builder()
@@ -200,9 +188,9 @@ class BluetoothChatManager(private val context: Context) {
             .build()
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .setReportDelay(0)          // report results immediately, no batching
-            .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)   // detect weak signals
-            .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT) // first ad packet
+            .setReportDelay(0)
+            .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+            .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT)
             .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
             .build()
 
@@ -214,8 +202,6 @@ class BluetoothChatManager(private val context: Context) {
         scanRestartJob = Runnable {
             if (!isScanning) return@Runnable
             if (hasPermissions()) bleScanner?.stopScan(scanCallback)
-            // Reduced restart interval — Android throttles scans > 30s
-            // 8s gives us fast discovery without throttle
             scanHandler.postDelayed({
                 if (isScanning) {
                     doStartScan()
@@ -227,21 +213,15 @@ class BluetoothChatManager(private val context: Context) {
         scanHandler.postDelayed(scanRestartJob!!, 8_000)
     }
 
-    // Remove devices not seen in the last 60 seconds
     private fun pruneStaleDevices() {
         val cutoff = System.currentTimeMillis() - 45_000
-
-        // Remove stale DIRECT devices
         val directOk = _discoveredDevices.value
             .filter { it.reachType == ReachType.DIRECT }
             .filter { it.lastSeen > cutoff }
-
-        // Remove MESH devices whose relay is no longer directly reachable
         val directUsernames = directOk.map { it.username }.toSet()
         val meshOk = _discoveredDevices.value
             .filter { it.reachType == ReachType.MESH }
-            .filter { it.viaDevice in directUsernames }  // relay still online?
-
+            .filter { it.viaDevice in directUsernames }
         val updated = directOk + meshOk
         if (updated.size != _discoveredDevices.value.size) {
             _discoveredDevices.value = updated
@@ -263,22 +243,20 @@ class BluetoothChatManager(private val context: Context) {
             val rssi       = result.rssi
             val deviceName = result.scanRecord?.deviceName ?: device.name ?: ""
 
-            // Skip devices without a valid username — they are not Bluetooth Chat devices
             if (deviceName.isBlank() || !deviceName.contains("#")) return
 
-            // Use username ("Name#TAG") as unique display/routing ID
-            // but keep real MAC address for GATT connection.
-            val uniqueId  = deviceName          // "Sakib#C7BB" — stable, unique
-            val macAddress = device.address     // real MAC — used only for connectGatt()
+            val uniqueId   = deviceName
+            val macAddress = device.address
 
             val list  = _discoveredDevices.value.toMutableList()
             val index = list.indexOfFirst { it.username == uniqueId }
             val found = DiscoveredDevice(
-                id             = uniqueId,      // username as routing/display ID
-                macAddress     = macAddress,    // real MAC stored for connectGatt()
+                id             = uniqueId,
+                macAddress     = macAddress,
                 username       = deviceName,
                 displayName    = deviceName.substringBefore("#"),
-                avatar         = "🧑",
+                avatar         = list.getOrNull(index)?.avatar ?: "🧑", // preserve avatar from PRESENCE
+                bio            = list.getOrNull(index)?.bio    ?: "",   // preserve bio from PRESENCE
                 signalStrength = rssi,
                 lastSeen       = System.currentTimeMillis()
             )
@@ -286,16 +264,14 @@ class BluetoothChatManager(private val context: Context) {
             if (index >= 0) list[index] = found else list.add(found)
             _discoveredDevices.value = list
 
-            // Auto-connect using real MAC address, not username
             if (isNew && !clientGatts.containsKey(macAddress)) {
                 Log.d(BLEConstants.TAG, "Auto-connecting to: $deviceName ($macAddress)")
-                connectToDevice(macAddress)   // ← real MAC address, not username
+                connectToDevice(macAddress)
             }
         }
 
         override fun onScanFailed(errorCode: Int) {
             Log.e(BLEConstants.TAG, "❌ Scan failed: $errorCode — restarting in 3s")
-            // Auto-restart on failure
             if (isScanning) {
                 scanHandler.postDelayed({ if (isScanning) doStartScan() }, 3_000)
             }
@@ -395,16 +371,19 @@ class BluetoothChatManager(private val context: Context) {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PRESENCE — tell new connection who else we know
+    // PRESENCE — send my avatar + bio + known peers to new connection
     // ─────────────────────────────────────────────────────────────────────────
     private fun sendPresenceTo(gatt: android.bluetooth.BluetoothGatt) {
         if (!hasPermissions()) return
-        // List of all directly-discovered devices (not mesh ones — avoid chain)
+
         val directPeers = _discoveredDevices.value
             .filter { it.reachType == ReachType.DIRECT }
             .map { it.username }
 
-        if (directPeers.isEmpty()) return
+        // Read my own avatar + bio so the other device can display my real profile
+        val prefs    = context.getSharedPreferences("BluetoothChat", Context.MODE_PRIVATE)
+        val myAvatar = prefs.getString("avatar", "🧑") ?: "🧑"
+        val myBio    = prefs.getString("bio",    "")   ?: ""
 
         val presence = MeshMessage(
             senderId         = myFullUsername,
@@ -412,10 +391,12 @@ class BluetoothChatManager(private val context: Context) {
             recipientId      = MeshMessage.BROADCAST,
             encryptedContent = "",
             type             = MeshMessage.TYPE_PRESENCE,
-            knownPeers       = directPeers
+            knownPeers       = directPeers,
+            avatar           = myAvatar,
+            bio              = myBio
         )
 
-        val bytes = presence.toBytes()
+        val bytes   = presence.toBytes()
         val service = gatt.getService(BLEConstants.SERVICE_UUID) ?: return
         val char    = service.getCharacteristic(BLEConstants.MESSAGE_CHARACTERISTIC_UUID) ?: return
         try {
@@ -424,7 +405,7 @@ class BluetoothChatManager(private val context: Context) {
             char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             @Suppress("DEPRECATION")
             gatt.writeCharacteristic(char)
-            Log.d(BLEConstants.TAG, "📋 Sent presence to ${gatt.device.address} with peers: $directPeers")
+            Log.d(BLEConstants.TAG, "📋 Sent presence to ${gatt.device.address} | avatar=$myAvatar | peers=$directPeers")
         } catch (e: Exception) {
             Log.e(BLEConstants.TAG, "Presence send failed: ${e.message}")
         }
@@ -435,8 +416,6 @@ class BluetoothChatManager(private val context: Context) {
     // ─────────────────────────────────────────────────────────────────────────
     private fun processIncomingBytes(bytes: ByteArray, fromAddress: String) {
         val msg = MeshMessage.fromBytes(bytes) ?: run {
-            // Cannot parse — packet likely truncated due to MTU limit
-            // Silently drop rather than showing raw JSON/bytes to the user
             Log.w(BLEConstants.TAG, "⚠️ Could not parse message — packet may be truncated")
             return
         }
@@ -448,23 +427,35 @@ class BluetoothChatManager(private val context: Context) {
         seenMessageIds.add(msg.id)
 
         when {
-            // ── Broadcast: always deliver + relay ─────────────────────────────
-            // ── Presence message — update mesh-reachable contacts ──────────
+            // ── Presence: update sender's avatar/bio + add mesh peers ──────────
             msg.type == MeshMessage.TYPE_PRESENCE -> {
-                Log.d(BLEConstants.TAG, "📋 Presence from ${msg.senderName}: ${msg.knownPeers}")
+                Log.d(BLEConstants.TAG, "📋 Presence from ${msg.senderName}: avatar=${msg.avatar} bio=${msg.bio} peers=${msg.knownPeers}")
+
+                // Update sender's avatar + bio in the discovered list
+                val updatedList = _discoveredDevices.value.toMutableList()
+                val senderIndex = updatedList.indexOfFirst { it.username == msg.senderName }
+                if (senderIndex >= 0) {
+                    val existing = updatedList[senderIndex]
+                    updatedList[senderIndex] = existing.copy(
+                        avatar = msg.avatar.ifEmpty { existing.avatar },
+                        bio    = msg.bio.ifEmpty    { existing.bio    }
+                    )
+                    _discoveredDevices.value = updatedList
+                    Log.d(BLEConstants.TAG, "✅ Updated profile for ${msg.senderName}")
+                }
+
+                // Add mesh-reachable peers we don't already know about
                 msg.knownPeers.forEach { peer ->
-                    // Only add if not already directly discovered and not ourselves
                     if (peer != myFullUsername &&
                         _discoveredDevices.value.none { it.username == peer }) {
-                        val displayName = peer.substringBefore("#")
-                        val meshDevice  = DiscoveredDevice(
-                            id        = peer,
-                            username  = peer,
-                            displayName = displayName,
-                            avatar    = "🧑",
-                            reachType = ReachType.MESH,
-                            viaDevice = msg.senderName,
-                            lastSeen  = System.currentTimeMillis()
+                        val meshDevice = DiscoveredDevice(
+                            id          = peer,
+                            username    = peer,
+                            displayName = peer.substringBefore("#"),
+                            avatar      = "🧑",
+                            reachType   = ReachType.MESH,
+                            viaDevice   = msg.senderName,
+                            lastSeen    = System.currentTimeMillis()
                         )
                         val list = _discoveredDevices.value.toMutableList()
                         list.add(meshDevice)
@@ -475,10 +466,10 @@ class BluetoothChatManager(private val context: Context) {
                 return
             }
 
+            // ── Broadcast ────────────────────────────────────────────────────
             msg.recipientId == MeshMessage.BROADCAST -> {
                 Log.d(BLEConstants.TAG, "📢 Broadcast from ${msg.senderName}")
                 appendBroadcastToUi(msg.encryptedContent, msg.id, msg.senderName)
-                // Show notification for broadcast messages
                 NotificationHelper.showBroadcastNotification(
                     context     = context,
                     senderName  = msg.senderName,
@@ -488,15 +479,11 @@ class BluetoothChatManager(private val context: Context) {
                 return
             }
 
-            // ── Private message: check by username not MAC ────────────────────
-            // MAC address is randomised to 02:00:00:00:00:00 on Android 6+
-            // so we use the full username ("Name#TAG") as the recipient identifier.
+            // ── Private message for me ────────────────────────────────────────
             msg.recipientId == myFullUsername -> {
                 Log.d(BLEConstants.TAG, "🔐 Private message for ME from ${msg.senderName}")
                 appendToUi(msg.encryptedContent, msg.id)
-                // Mark sender as unread — shows red dot on contact card
                 UnreadStore.markUnread(context, msg.senderName)
-                // Show notification — taps open HomeActivity Nearby tab
                 val senderTag = msg.senderName.substringAfter("#", "")
                 NotificationHelper.showPrivateMessageNotification(
                     context         = context,
@@ -506,17 +493,16 @@ class BluetoothChatManager(private val context: Context) {
                     deviceId        = fromAddress,
                     contactTag      = senderTag
                 )
-                return  // don't relay — message reached its destination
+                return
             }
 
-            // ── Not for me: relay to other connected devices ──────────────────
+            // ── Relay to others ───────────────────────────────────────────────
             else -> {
                 Log.d(BLEConstants.TAG, "🔁 Relaying message for ${msg.recipientId}")
                 routeMessage(msg, receivedFromAddress = fromAddress)
                 return
             }
         }
-
     }
 
     private fun appendToUi(encryptedContent: String, messageId: String? = null) {
@@ -533,7 +519,7 @@ class BluetoothChatManager(private val context: Context) {
             id         = messageId ?: java.util.UUID.randomUUID().toString(),
             text       = text,
             isMine     = false,
-            senderName = senderName,   // full "Name#TAG" passed from MeshMessage
+            senderName = senderName,
             status     = MessageStatus.DELIVERED
         )
     }
@@ -549,7 +535,6 @@ class BluetoothChatManager(private val context: Context) {
                     Log.d(BLEConstants.TAG, "✅ Client connected to ${gatt.device.address}")
                     _connectionState.value = "Connected"
                     if (hasPermissions()) {
-                        // Request 512-byte MTU so full MeshMessage JSON fits in one packet
                         gatt.requestMtu(512)
                     }
                 }
@@ -578,18 +563,15 @@ class BluetoothChatManager(private val context: Context) {
             @Suppress("DEPRECATION")
             gatt.writeDescriptor(descriptor)
             Log.d(BLEConstants.TAG, "✅ Notifications enabled on ${gatt.device.address}")
-            // Send presence so the other device knows who else we are connected to
             sendPresenceTo(gatt)
         }
 
-        // Android 13+ (API 33+) — new signature with value param
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray
         ) {
             processIncomingBytes(value, gatt.device.address)
         }
 
-        // Android 12 and below — deprecated but required for OPPO CPH2667 (API 35)
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic

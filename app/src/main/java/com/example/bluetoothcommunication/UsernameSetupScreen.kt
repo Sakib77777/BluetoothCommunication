@@ -80,6 +80,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
 
     var username       by remember { mutableStateOf("") }
     var selectedAvatar by remember { mutableStateOf("🧑") }
+    var bio            by remember { mutableStateOf("") }
     var errorMessage   by remember { mutableStateOf("") }
     var isSuccess      by remember { mutableStateOf(false) }
     var visible        by remember { mutableStateOf(false) }
@@ -110,14 +111,14 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
                 .padding(horizontal = 24.dp)
                 .alpha(alpha)
                 .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally  // ← centres everything
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(48.dp))
 
             // ── Header badge ──────────────────────────────────────────────────
             Surface(
-                shape    = RoundedCornerShape(20.dp),
-                color    = MaterialTheme.colorScheme.primaryContainer
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Text(
                     text     = "📡  Bluetooth Chat",
@@ -129,7 +130,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // ── Title (left-aligned inside a full-width block) ─────────────────
+            // ── Title ─────────────────────────────────────────────────────────
             Column(
                 modifier            = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.Start
@@ -150,7 +151,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // ── Avatar preview — centred ───────────────────────────────────────
+            // ── Avatar preview ────────────────────────────────────────────────
             Box(
                 contentAlignment = Alignment.Center,
                 modifier         = Modifier
@@ -170,7 +171,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // ── Avatar section label ───────────────────────────────────────────
+            // ── Avatar section label ──────────────────────────────────────────
             Text(
                 text          = "CHOOSE AVATAR",
                 style         = MaterialTheme.typography.labelSmall,
@@ -181,7 +182,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ── Avatar grid — two rows, evenly spaced, full width ──────────────
+            // ── Avatar grid ───────────────────────────────────────────────────
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -212,7 +213,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // ── Username input ─────────────────────────────────────────────────
+            // ── Username input ────────────────────────────────────────────────
             Text(
                 text          = "USERNAME",
                 style         = MaterialTheme.typography.labelSmall,
@@ -232,9 +233,9 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
                 singleLine      = true,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Words,
-                    imeAction      = ImeAction.Done
+                    imeAction      = ImeAction.Next
                 ),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                keyboardActions = KeyboardActions(onNext = { focusManager.clearFocus() }),
                 trailingIcon    = {
                     Text(
                         text       = "#$deviceTag",
@@ -269,9 +270,45 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
                 )
             }
 
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Bio / status input (optional) ─────────────────────────────────
+            Text(
+                text          = "BIO (OPTIONAL)",
+                style         = MaterialTheme.typography.labelSmall,
+                color         = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.sp,
+                modifier      = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value         = bio,
+                onValueChange = { if (it.length <= 60) bio = it },
+                placeholder   = { Text("e.g. Love hiking 🏔️") },
+                singleLine    = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                shape    = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+                colors   = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor   = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                ),
+                trailingIcon = {
+                    Text(
+                        text     = "${bio.length}/60",
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                }
+            )
+
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ── Live username preview ──────────────────────────────────────────
+            // ── Live username preview ─────────────────────────────────────────
             AnimatedVisibility(
                 visible = username.isNotEmpty() && !isSuccess,
                 enter   = fadeIn() + slideInVertically()
@@ -325,7 +362,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // ── Get Started button ─────────────────────────────────────────────
+            // ── Get Started button ────────────────────────────────────────────
             Button(
                 onClick = {
                     when {
@@ -350,6 +387,7 @@ fun UsernameSetupScreen(onContinue: (String, String) -> Unit = { _, _ -> }) {
                                 .putString("displayName", username.trim())
                                 .putString("deviceTag",   deviceTag)
                                 .putString("avatar",      selectedAvatar)
+                                .putString("bio",         bio.trim())
                                 .apply()
                             scope.launch {
                                 delay(600)

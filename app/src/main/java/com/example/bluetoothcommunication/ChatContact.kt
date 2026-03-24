@@ -3,30 +3,25 @@ package com.example.bluetoothcommunication
 /**
  * Represents a discovered BLE peer shown in the Home screen contact list.
  *
- * This model bridges the raw BLE device data (from BluetoothChatManager)
- * and the UI layer (HomeScreen / ChatContactItem composables).
- *
- * Fields
- * ──────
- * @param id          BLE device MAC address — used as the unique key for
- *                    GATT connections and encryption key derivation.
- * @param username    Full username with device tag, e.g. "Sakib#A3F7".
- *                    Displayed in the contact row as "#A3F7".
- * @param displayName Human-readable name shown as the contact title,
- *                    e.g. "Sakib".
- * @param avatar      Emoji avatar chosen during UsernameSetupScreen.
- * @param lastMessage Preview text shown below the contact name.
- *                    Defaults to "Tap to connect & chat" for new contacts.
- * @param time        Timestamp label (e.g. "Now", "2 min ago", "12:30 PM").
- * @param isOnline    true = device is currently reachable via BLE.
- *                    Drives the green/grey status dot in the UI.
- * @param unreadCount Number of unread messages. Shows a blue badge when > 0.
+ * @param id          Username "Name#TAG" — unique routing ID
+ * @param username    Full username with device tag, e.g. "Sakib#A3F7"
+ * @param displayName Human-readable name, e.g. "Sakib"
+ * @param avatar      Emoji avatar received from the contact's PRESENCE broadcast
+ * @param bio         Short bio/status received from the contact
+ * @param lastMessage Preview text shown below the contact name
+ * @param time        Timestamp label (e.g. "Now", "12:30 PM")
+ * @param isOnline    true = device is currently reachable via BLE
+ * @param unreadCount Number of unread messages — shows a badge when > 0
+ * @param macAddress  Real BLE MAC address — used only for GATT connection
+ * @param reachType   How this contact is reachable (DIRECT, MESH, OFFLINE)
+ * @param viaDevice   Username of relay node when reachType == MESH
  */
 data class ChatContact(
     val id          : String,
     val username    : String,
     val displayName : String,
     val avatar      : String,
+    val bio         : String    = "",
     val lastMessage : String    = "Tap to connect & chat",
     val time        : String    = "Now",
     val isOnline    : Boolean   = false,

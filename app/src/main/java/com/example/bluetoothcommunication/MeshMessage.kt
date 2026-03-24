@@ -13,8 +13,10 @@ data class MeshMessage(
     val hop              : Int    = 0,
     val maxHops          : Int    = MAX_HOPS,
     val timestamp        : Long   = System.currentTimeMillis(),
-    val type             : String = TYPE_CHAT,        // "CHAT", "BROADCAST", "PRESENCE"
-    val knownPeers       : List<String> = emptyList() // used only for PRESENCE type
+    val type             : String = TYPE_CHAT,
+    val knownPeers       : List<String> = emptyList(),
+    val avatar           : String = "",   // sender's emoji avatar — populated in PRESENCE
+    val bio              : String = ""    // sender's short bio/status — populated in PRESENCE
 ) {
     fun toJson(): String = JSONObject().apply {
         put("id",    id)
@@ -29,13 +31,18 @@ data class MeshMessage(
         if (knownPeers.isNotEmpty()) {
             put("peers", JSONArray(knownPeers))
         }
+        // Include avatar + bio only in PRESENCE messages
+        if (type == TYPE_PRESENCE) {
+            if (avatar.isNotEmpty()) put("avatar", avatar)
+            if (bio.isNotEmpty())    put("bio",    bio)
+        }
     }.toString()
 
     fun toBytes(): ByteArray = toJson().toByteArray(Charsets.UTF_8)
 
     companion object {
-        const val BROADCAST  = "BROADCAST"
-        const val MAX_HOPS   = 5
+        const val BROADCAST      = "BROADCAST"
+        const val MAX_HOPS       = 5
         const val TYPE_CHAT      = "CHAT"
         const val TYPE_BROADCAST = "BROADCAST_MSG"
         const val TYPE_PRESENCE  = "PRESENCE"
@@ -57,7 +64,9 @@ data class MeshMessage(
                     maxHops          = o.getInt("max"),
                     timestamp        = o.getLong("ts"),
                     type             = o.optString("type", TYPE_CHAT),
-                    knownPeers       = peers
+                    knownPeers       = peers,
+                    avatar           = o.optString("avatar", ""),
+                    bio              = o.optString("bio",    "")
                 )
             }
         }.getOrNull()

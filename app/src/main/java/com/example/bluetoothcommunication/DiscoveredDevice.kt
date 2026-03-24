@@ -9,7 +9,8 @@ enum class ReachType { DIRECT, MESH, OFFLINE }
  * @param macAddress     Real BLE MAC — only for connectGatt()
  * @param username       Full "Name#TAG"
  * @param displayName    "Name" part (before #)
- * @param avatar         Emoji avatar
+ * @param avatar         Emoji avatar (received via PRESENCE message)
+ * @param bio            Short bio/status text (received via PRESENCE message)
  * @param signalStrength RSSI in dBm
  * @param lastSeen       Timestamp of last scan result
  * @param reachType      DIRECT = in BLE range, MESH = reachable via relay, OFFLINE = not reachable
@@ -21,8 +22,9 @@ data class DiscoveredDevice(
     val username       : String,
     val displayName    : String,
     val avatar         : String    = "🧑",
+    val bio            : String    = "",
     val signalStrength : Int       = -100,
     val lastSeen       : Long      = System.currentTimeMillis(),
     val reachType      : ReachType = ReachType.DIRECT,
-    val viaDevice      : String    = ""   // relay username e.g. "Suman#2E78"
+    val viaDevice      : String    = ""
 )
