@@ -2,6 +2,7 @@ package com.example.bluetoothcommunication
 
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -44,7 +45,7 @@ data class ChatMessage(
     val id          : String = UUID.randomUUID().toString(),
     val text        : String,
     val isMine      : Boolean,
-    val senderName  : String = "",   // full username e.g. "Sakib#C7BB"
+    val senderName  : String = "",
     val time        : String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
     val isEncrypted : Boolean = true,
     val status      : MessageStatus = MessageStatus.SENT
@@ -54,9 +55,6 @@ enum class MessageStatus { SENDING, SENT, DELIVERED, READ }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHAT STORAGE
-// Saves/loads messages per contact using SharedPreferences (JSON).
-// Key format: "chat_<contactId>" (colons replaced to avoid key issues)
-// Keeps last 200 messages per contact to avoid unbounded growth.
 // ─────────────────────────────────────────────────────────────────────────────
 object ChatStorage {
 
@@ -93,7 +91,9 @@ object ChatStorage {
                     senderName = o.optString("sender", ""),
                     time       = o.getString("time"),
                     status     = runCatching {
-                        MessageStatus.valueOf(o.getString("status"))
+                        // Saved SENDING messages are treated as SENT on reload
+                        val s = MessageStatus.valueOf(o.getString("status"))
+                        if (s == MessageStatus.SENDING) MessageStatus.SENT else s
                     }.getOrDefault(MessageStatus.DELIVERED)
                 )
             }
@@ -109,8 +109,6 @@ object ChatStorage {
 // ─── Chat Activity ────────────────────────────────────────────────────────────
 class ChatActivity : ComponentActivity() {
 
-    // Holds current contact info as state — updating it re-renders the entire ChatScreen
-    // This is the key fix: onNewIntent updates these states → UI rebuilds automatically
     private val currentContactFullName = mutableStateOf("")
     private val currentContactName     = mutableStateOf("")
     private val currentContactAvatar   = mutableStateOf("🧑")
@@ -122,15 +120,14 @@ class ChatActivity : ComponentActivity() {
         enableEdgeToEdge()
         loadFromIntent(intent)
 
-        val btManager = (application as BluetoothChatApp).btManager
-        val prefs     = getSharedPreferences("BluetoothChat", Context.MODE_PRIVATE)
-        val myName    = prefs.getString("displayName", "Me") ?: "Me"
-        val myDevTag  = prefs.getString("deviceTag", "") ?: ""
+        val btManager  = (application as BluetoothChatApp).btManager
+        val prefs      = getSharedPreferences("BluetoothChat", Context.MODE_PRIVATE)
+        val myName     = prefs.getString("displayName", "Me") ?: "Me"
+        val myDevTag   = prefs.getString("deviceTag", "") ?: ""
         val myFullName = prefs.getString("username", "$myName#$myDevTag") ?: "$myName#$myDevTag"
 
         setContent {
             BluetoothChatTheme {
-                // Observe state — any change to these triggers full recompose
                 val contactFullName = currentContactFullName.value
                 val contactName     = currentContactName.value
                 val contactAvatar   = currentContactAvatar.value
@@ -141,55 +138,56 @@ class ChatActivity : ComponentActivity() {
                     EncryptionManager.generateSharedKey(myFullName, contactFullName)
                 }
 
-                // Load history — keyed to contactFullName so reloads when contact changes
                 val savedMessages = remember(contactFullName) {
                     if (contactFullName.isNotBlank()) ChatStorage.load(this@ChatActivity, contactFullName)
                     else emptyList()
                 }
 
-                // Connect to device whenever contact changes
                 LaunchedEffect(deviceId) {
                     if (deviceId.isNotBlank() && deviceId.contains(":")) {
                         btManager.connectToDevice(deviceId)
                     }
                 }
 
-                val btMessages by btManager.receivedMessages.collectAsState()
+                val btMessages    by btManager.receivedMessages.collectAsState()
+                val deliveredAcks by btManager.deliveredAcks.collectAsState()
+                val readReceipts  by btManager.readReceipts.collectAsState()
 
-                // key() forces ChatScreen to fully reset when contact changes
-                // Without this, old messages / seenIds remain from previous contact
                 key(contactFullName) {
                     ChatScreen(
-                        contactName   = contactName,
-                        contactAvatar = contactAvatar,
-                        contactTag    = contactTag,
-                        contactId     = contactFullName,
-                        myName        = myName,
-                        btMessages    = btMessages,
-                        encryptionKey = encryptionKey,
-                        onSendMessage = { text ->
+                        contactName      = contactName,
+                        contactAvatar    = contactAvatar,
+                        contactTag       = contactTag,
+                        contactId        = contactFullName,
+                        myFullName       = myFullName,
+                        myName           = myName,
+                        btMessages       = btMessages,
+                        encryptionKey    = encryptionKey,
+                        deliveredAcks    = deliveredAcks,
+                        readReceipts     = readReceipts,
+                        onSendMessage    = { text, msgId ->
                             val encrypted = EncryptionManager.encrypt(text, encryptionKey)
-                            btManager.sendMessage(encrypted, myName, recipientId = contactFullName)
+                            btManager.sendMessage(encrypted, myName, recipientId = contactFullName, messageId = msgId)
                         },
-                        onBackClick   = { finish() },
-                        savedMessages = savedMessages,
-                        storageKey    = contactFullName,
-                        appContext    = this
+                        onSendReadReceipt = { msgId ->
+                            btManager.sendReadReceipt(msgId, toUsername = contactFullName)
+                        },
+                        onBackClick      = { finish() },
+                        savedMessages    = savedMessages,
+                        storageKey       = contactFullName,
+                        appContext       = this
                     )
                 }
             }
         }
     }
 
-    // Called when notification tapped and ChatActivity already exists (singleTask)
-    // Updates state → setContent re-renders with new contact automatically
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        loadFromIntent(intent)  // update state → triggers recompose
+        loadFromIntent(intent)
     }
 
-    // Extract extras from intent and update state variables
     private fun loadFromIntent(intent: android.content.Intent) {
         val tag = intent.getStringExtra("contactTag") ?: "????"
         currentContactFullName.value = intent.getStringExtra("contactFullName") ?: ""
@@ -204,18 +202,22 @@ class ChatActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    contactName   : String = "Rahul",
-    contactAvatar : String = "👨‍💻",
-    contactTag    : String = "A3F7",
-    contactId     : String = "",
-    myName        : String = "Me",
-    btMessages    : List<ChatMessage> = emptyList(),
-    encryptionKey : javax.crypto.SecretKey? = null,
-    onSendMessage : (String) -> Unit = {},
-    onBackClick   : () -> Unit = {},
-    savedMessages : List<ChatMessage> = emptyList(),  // pre-loaded chat history
-    storageKey    : String = contactId,               // key for ChatStorage (contactFullName)
-    appContext     : Context? = null                  // for saving messages
+    contactName       : String = "Rahul",
+    contactAvatar     : String = "👨‍💻",
+    contactTag        : String = "A3F7",
+    contactId         : String = "",
+    myFullName        : String = "",
+    myName            : String = "Me",
+    btMessages        : List<ChatMessage> = emptyList(),
+    encryptionKey     : javax.crypto.SecretKey? = null,
+    deliveredAcks     : String = "",    // emits msgId when BLE write confirmed
+    readReceipts      : String = "",    // emits msgId when recipient reads it
+    onSendMessage     : (text: String, msgId: String) -> Unit = { _, _ -> },
+    onSendReadReceipt : (msgId: String) -> Unit = {},
+    onBackClick       : () -> Unit = {},
+    savedMessages     : List<ChatMessage> = emptyList(),
+    storageKey        : String = contactId,
+    appContext        : Context? = null
 ) {
     val context   = appContext ?: LocalContext.current
     val scope     = rememberCoroutineScope()
@@ -227,8 +229,6 @@ fun ChatScreen(
     var showClearDialog by remember { mutableStateOf(false) }
     val seenBleIds      = remember { mutableSetOf<String>() }
 
-    // Use pre-loaded messages from ChatActivity (avoids double-load)
-    // Falls back to loading from storage if not provided
     var messages by remember {
         mutableStateOf(
             if (savedMessages.isNotEmpty()) savedMessages
@@ -237,34 +237,55 @@ fun ChatScreen(
         )
     }
 
-    // Pre-seed seenBleIds with loaded message IDs so they don't re-appear
     LaunchedEffect(Unit) {
         messages.forEach { seenBleIds.add(it.id) }
     }
 
-    // Auto-save on every change
     LaunchedEffect(messages) {
         if (storageKey.isNotEmpty() && messages.isNotEmpty()) {
             ChatStorage.save(context, storageKey, messages)
         }
     }
 
+    // ── DELIVERY ACK — BLE write confirmed → SENDING → SENT ──────────────────
+    // deliveredAcks emits a new non-empty string each time a write succeeds
+    LaunchedEffect(deliveredAcks) {
+        if (deliveredAcks.isBlank()) return@LaunchedEffect
+        messages = messages.map { msg ->
+            if (msg.id == deliveredAcks && msg.status == MessageStatus.SENDING)
+                msg.copy(status = MessageStatus.SENT)
+            else msg
+        }
+        Log.d("ChatScreen", "✅ SENT confirmed for $deliveredAcks")
+    }
+
+    // ── READ RECEIPT — recipient opened chat → SENT/DELIVERED → READ ─────────
+    LaunchedEffect(readReceipts) {
+        if (readReceipts.isBlank()) return@LaunchedEffect
+        messages = messages.map { msg ->
+            if (msg.id == readReceipts && msg.isMine &&
+                (msg.status == MessageStatus.SENT || msg.status == MessageStatus.DELIVERED))
+                msg.copy(status = MessageStatus.READ)
+            else msg
+        }
+        Log.d("ChatScreen", "👁 READ confirmed for $readReceipts")
+    }
+
     val infiniteTransition = rememberInfiniteTransition(label = "chat")
     val btPulse by infiniteTransition.animateFloat(
-        initialValue  = 0.4f, targetValue = 1f,
+        initialValue = 0.4f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1200), RepeatMode.Reverse), label = "bt"
     )
-    val dot1 by infiniteTransition.animateFloat(initialValue = 0.3f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(400), RepeatMode.Reverse, StartOffset(0)), label = "d1")
+    val dot1 by infiniteTransition.animateFloat(initialValue = 0.3f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(400), RepeatMode.Reverse, StartOffset(0)),   label = "d1")
     val dot2 by infiniteTransition.animateFloat(initialValue = 0.3f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(400), RepeatMode.Reverse, StartOffset(150)), label = "d2")
     val dot3 by infiniteTransition.animateFloat(initialValue = 0.3f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(400), RepeatMode.Reverse, StartOffset(300)), label = "d3")
 
-    // Receive BLE messages
+    // ── Receive BLE message ───────────────────────────────────────────────────
     LaunchedEffect(btMessages) {
         val latest = btMessages.lastOrNull() ?: return@LaunchedEffect
         if (latest.id in seenBleIds) return@LaunchedEffect
         seenBleIds.add(latest.id)
 
-        // Drop silently if decryption fails — prevents raw ciphertext showing in chat
         val decrypted = if (encryptionKey != null) {
             EncryptionManager.safeDecrypt(latest.text, encryptionKey) ?: return@LaunchedEffect
         } else latest.text
@@ -272,9 +293,13 @@ fun ChatScreen(
         isTyping = true
         delay(600)
         isTyping = false
-        messages = messages + latest.copy(text = decrypted, status = MessageStatus.DELIVERED)
+        val incomingMsg = latest.copy(text = decrypted, status = MessageStatus.DELIVERED)
+        messages = messages + incomingMsg
         delay(100)
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+
+        // Send read receipt so sender's ✓✓ turns blue
+        onSendReadReceipt(latest.id)
     }
 
     LaunchedEffect(Unit) {
@@ -288,22 +313,19 @@ fun ChatScreen(
 
     fun sendMessage() {
         if (messageText.isBlank()) return
-        val newMsg     = ChatMessage(text = messageText.trim(), isMine = true, status = MessageStatus.SENDING)
+        val msgId      = UUID.randomUUID().toString()
+        val newMsg     = ChatMessage(id = msgId, text = messageText.trim(), isMine = true, status = MessageStatus.SENDING)
         val textToSend = messageText.trim()
         messages    = messages + newMsg
         messageText = ""
         scope.launch {
             delay(100)
             if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
-            onSendMessage(textToSend)
-            delay(500)
-            messages = messages.map { if (it.id == newMsg.id) it.copy(status = MessageStatus.SENT) else it }
-            delay(800)
-            messages = messages.map { if (it.id == newMsg.id) it.copy(status = MessageStatus.DELIVERED) else it }
+            // Pass the same ID down so BluetoothChatManager creates the MeshMessage with it
+            onSendMessage(textToSend, msgId)
         }
     }
 
-    // ── imePadding() on Scaffold = layout shrinks when keyboard opens ─────────
     Scaffold(
         modifier       = Modifier.imePadding(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -336,7 +358,6 @@ fun ChatScreen(
                         Text(text = "🔒 E2E", style = MaterialTheme.typography.labelSmall, color = SoftCyan, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                     }
                     Spacer(modifier = Modifier.width(6.dp))
-                    // Clear chat button
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(end = 8.dp).size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).clickable { showClearDialog = true }) {
                         Text(text = "⋮", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
                     }
@@ -388,14 +409,12 @@ fun ChatScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
 
-            // Encryption banner
             AnimatedVisibility(visible = showEncBadge, enter = fadeIn() + slideInVertically(), exit = fadeOut() + slideOutVertically()) {
                 Surface(color = SoftCyan.copy(0.08f)) {
                     Text(text = "🔒  Messages are end-to-end encrypted", style = MaterialTheme.typography.labelSmall, color = SoftCyan, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
                 }
             }
 
-            // Empty state
             if (messages.isEmpty() && !isTyping) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f).fillMaxWidth()) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -405,7 +424,6 @@ fun ChatScreen(
                     }
                 }
             } else {
-                // weight(1f) is the key — list shrinks when keyboard opens
                 LazyColumn(
                     state               = listState,
                     modifier            = Modifier.weight(1f).fillMaxWidth(),
@@ -424,12 +442,11 @@ fun ChatScreen(
         }
     }
 
-    // Clear chat confirmation dialog
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             title   = { Text(text = "Clear chat history", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
-            text    = { Text(text = "This will permanently delete all messages with $contactName. This cannot be undone.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            text    = { Text(text = "This will permanently delete all messages with $contactName.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
             confirmButton = {
                 TextButton(onClick = {
                     messages = emptyList()
@@ -449,33 +466,111 @@ fun ChatScreen(
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 @Composable
 fun MessageBubble(message: ChatMessage) {
-    val bubbleShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = if (message.isMine) 18.dp else 4.dp, bottomEnd = if (message.isMine) 4.dp else 18.dp)
-    Row(horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start, modifier = Modifier.fillMaxWidth()) {
+    val bubbleShape = RoundedCornerShape(
+        topStart    = 18.dp,
+        topEnd      = 18.dp,
+        bottomStart = if (message.isMine) 18.dp else 4.dp,
+        bottomEnd   = if (message.isMine) 4.dp  else 18.dp
+    )
+    Row(
+        horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
+        modifier              = Modifier.fillMaxWidth()
+    ) {
         Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
                 .clip(bubbleShape)
-                .background(if (message.isMine) Brush.linearGradient(listOf(NeonPurple, NeonBlue)) else Brush.linearGradient(listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface)))
+                .background(
+                    if (message.isMine)
+                        Brush.linearGradient(listOf(NeonPurple, NeonBlue))
+                    else
+                        Brush.linearGradient(listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface))
+                )
                 .then(if (!message.isMine) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, bubbleShape) else Modifier)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Column {
-                Text(text = message.text, style = MaterialTheme.typography.bodyMedium, color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface, lineHeight = 20.sp)
+                Text(
+                    text      = message.text,
+                    style     = MaterialTheme.typography.bodyMedium,
+                    color     = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 20.sp
+                )
                 Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+
+                // ── Timestamp + delivery status row ───────────────────────────
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment     = Alignment.CenterVertically,
+                    modifier              = Modifier.fillMaxWidth()
+                ) {
                     Text(text = "🔒", fontSize = 9.sp, modifier = Modifier.alpha(0.6f))
                     Spacer(modifier = Modifier.width(3.dp))
-                    Text(text = message.time, style = MaterialTheme.typography.labelSmall, color = if (message.isMine) Color.White.copy(0.6f) else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text  = message.time,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (message.isMine) Color.White.copy(0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // ── Delivery status indicator (only on my messages) ────────
                     if (message.isMine) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text  = when (message.status) { MessageStatus.SENDING -> "○"; MessageStatus.SENT -> "✓"; else -> "✓✓" },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (message.status == MessageStatus.READ) SoftCyan else Color.White.copy(0.6f)
-                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        DeliveryStatusIcon(status = message.status)
                     }
                 }
             }
+        }
+    }
+}
+
+// ─── Delivery Status Icon ─────────────────────────────────────────────────────
+// ○   SENDING   — clock / pending (message not yet written to BLE)
+// ✓   SENT      — single tick (BLE write confirmed by onCharacteristicWrite)
+// ✓✓  DELIVERED — double tick white (reached recipient's device)
+// ✓✓  READ      — double tick CYAN (recipient opened the chat)
+@Composable
+fun DeliveryStatusIcon(status: MessageStatus) {
+    when (status) {
+        MessageStatus.SENDING -> {
+            // Animated clock pulse while waiting for BLE write callback
+            val infiniteTransition = rememberInfiniteTransition(label = "sending")
+            val alpha by infiniteTransition.animateFloat(
+                initialValue  = 0.3f,
+                targetValue   = 1f,
+                animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                label         = "pulse"
+            )
+            Text(
+                text     = "○",
+                fontSize = 11.sp,
+                color    = Color.White.copy(alpha),
+                modifier = Modifier.alpha(alpha)
+            )
+        }
+        MessageStatus.SENT -> {
+            // Single tick — BLE write succeeded
+            Text(
+                text     = "✓",
+                fontSize = 11.sp,
+                color    = Color.White.copy(0.7f)
+            )
+        }
+        MessageStatus.DELIVERED -> {
+            // Double tick white — message arrived on recipient's device
+            Text(
+                text     = "✓✓",
+                fontSize = 11.sp,
+                color    = Color.White.copy(0.7f)
+            )
+        }
+        MessageStatus.READ -> {
+            // Double tick cyan — recipient opened the chat and read it
+            Text(
+                text       = "✓✓",
+                fontSize   = 11.sp,
+                color      = SoftCyan,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -484,8 +579,14 @@ fun MessageBubble(message: ChatMessage) {
 @Composable
 fun TypingIndicator(avatar: String, dot1: Float, dot2: Float, dot3: Float) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) { Text(text = avatar, fontSize = 14.sp) }
-        Surface(shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 4.dp, bottomEnd = 18.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
+            Text(text = avatar, fontSize = 14.sp)
+        }
+        Surface(
+            shape  = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 4.dp, bottomEnd = 18.dp),
+            color  = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Box(modifier = Modifier.size(7.dp).alpha(dot1).background(MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
                 Box(modifier = Modifier.size(7.dp).alpha(dot2).background(MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
@@ -494,3 +595,6 @@ fun TypingIndicator(avatar: String, dot1: Float, dot2: Float, dot3: Float) {
         }
     }
 }
+
+// Add this import at the top of the file (android.util.Log for debug logging)
+private fun Log.d(tag: String, msg: String) = android.util.Log.d(tag, msg)

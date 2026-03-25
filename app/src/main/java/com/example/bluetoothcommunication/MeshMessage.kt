@@ -41,11 +41,14 @@ data class MeshMessage(
     fun toBytes(): ByteArray = toJson().toByteArray(Charsets.UTF_8)
 
     companion object {
-        const val BROADCAST      = "BROADCAST"
-        const val MAX_HOPS       = 5
-        const val TYPE_CHAT      = "CHAT"
-        const val TYPE_BROADCAST = "BROADCAST_MSG"
-        const val TYPE_PRESENCE  = "PRESENCE"
+        const val BROADCAST          = "BROADCAST"
+        const val MAX_HOPS           = 5
+        const val TYPE_CHAT          = "CHAT"
+        const val TYPE_BROADCAST     = "BROADCAST_MSG"
+        const val TYPE_PRESENCE      = "PRESENCE"
+        // ── NEW: sent by recipient when they open & read a private message ──
+        // encryptedContent carries the original message ID being acknowledged
+        const val TYPE_READ_RECEIPT  = "READ_RECEIPT"
 
         fun fromJson(json: String): MeshMessage? = runCatching {
             JSONObject(json).let { o ->

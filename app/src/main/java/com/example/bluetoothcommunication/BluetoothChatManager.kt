@@ -32,18 +32,6 @@ sealed class BLEState {
     data class Error(val message: String) : BLEState()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MESH ROUTING OVERVIEW
-//
-//   Phone A  ──BLE──►  Phone B  ──BLE──►  Phone C
-//
-//   A sends MeshMessage { senderId="A", recipientId="C", hop=0 }
-//   B receives → recipientId ≠ B → relay to C (hop becomes 1)
-//   C receives → recipientId == C → decrypt + deliver to UI
-//
-// Loop prevention : seenMessageIds set
-// Multi-connection: clientGatts map (one BluetoothGatt per peer)
-// ─────────────────────────────────────────────────────────────────────────────
 @SuppressLint("MissingPermission")
 class BluetoothChatManager(private val context: Context) {
 
@@ -53,18 +41,17 @@ class BluetoothChatManager(private val context: Context) {
     private var bleAdvertiser    : BluetoothLeAdvertiser? = null
     private var gattServer       : BluetoothGattServer?   = null
 
-    // Multi-connection maps
     private val clientGatts      = mutableMapOf<String, BluetoothGatt>()
     private val connectedClients = mutableListOf<BluetoothDevice>()
+    private val seenMessageIds   = mutableSetOf<String>()
 
-    // Mesh deduplication
-    private val seenMessageIds = mutableSetOf<String>()
+    private var myAddress      : String = ""
+    private var myFullUsername : String = ""
 
-    // My own address
-    private var myAddress     : String = ""
-    private var myFullUsername: String = ""
+    // Tracks the ID of the most recently sent message so we can ack it
+    // when onCharacteristicWrite fires with GATT_SUCCESS
+    private var pendingAckMessageId: String = ""
 
-    // Continuous scan handler
     private val scanHandler    = Handler(Looper.getMainLooper())
     private var isScanning     = false
     private var scanRestartJob : Runnable? = null
@@ -81,6 +68,16 @@ class BluetoothChatManager(private val context: Context) {
 
     private val _connectionState = MutableStateFlow("Disconnected")
     val connectionState: StateFlow<String> = _connectionState
+
+    // ── NEW: Delivery ack flow ────────────────────────────────────────────────
+    // Emits the message ID when BLE confirms the write succeeded (real SENT)
+    private val _deliveredAcks = MutableStateFlow("")
+    val deliveredAcks: StateFlow<String> = _deliveredAcks
+
+    // ── NEW: Read receipt flow ────────────────────────────────────────────────
+    // Emits the original message ID when the recipient sends a read receipt
+    private val _readReceipts = MutableStateFlow("")
+    val readReceipts: StateFlow<String> = _readReceipts
 
     val onlineCount: Int get() = _discoveredDevices.value.size
 
@@ -128,7 +125,7 @@ class BluetoothChatManager(private val context: Context) {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // START ADVERTISING
+    // ADVERTISING
     // ─────────────────────────────────────────────────────────────────────────
     fun startAdvertising(myUsername: String) {
         if (!hasPermissions() || !isBluetoothEnabled()) return
@@ -214,18 +211,12 @@ class BluetoothChatManager(private val context: Context) {
     }
 
     private fun pruneStaleDevices() {
-        val cutoff = System.currentTimeMillis() - 45_000
-        val directOk = _discoveredDevices.value
-            .filter { it.reachType == ReachType.DIRECT }
-            .filter { it.lastSeen > cutoff }
-        val directUsernames = directOk.map { it.username }.toSet()
-        val meshOk = _discoveredDevices.value
-            .filter { it.reachType == ReachType.MESH }
-            .filter { it.viaDevice in directUsernames }
-        val updated = directOk + meshOk
-        if (updated.size != _discoveredDevices.value.size) {
-            _discoveredDevices.value = updated
-        }
+        val cutoff     = System.currentTimeMillis() - 45_000
+        val directOk   = _discoveredDevices.value.filter { it.reachType == ReachType.DIRECT && it.lastSeen > cutoff }
+        val directNames = directOk.map { it.username }.toSet()
+        val meshOk     = _discoveredDevices.value.filter { it.reachType == ReachType.MESH && it.viaDevice in directNames }
+        val updated    = directOk + meshOk
+        if (updated.size != _discoveredDevices.value.size) _discoveredDevices.value = updated
     }
 
     fun stopScanning() {
@@ -242,21 +233,19 @@ class BluetoothChatManager(private val context: Context) {
             val device     = result.device
             val rssi       = result.rssi
             val deviceName = result.scanRecord?.deviceName ?: device.name ?: ""
-
             if (deviceName.isBlank() || !deviceName.contains("#")) return
 
             val uniqueId   = deviceName
             val macAddress = device.address
-
-            val list  = _discoveredDevices.value.toMutableList()
-            val index = list.indexOfFirst { it.username == uniqueId }
+            val list       = _discoveredDevices.value.toMutableList()
+            val index      = list.indexOfFirst { it.username == uniqueId }
             val found = DiscoveredDevice(
                 id             = uniqueId,
                 macAddress     = macAddress,
                 username       = deviceName,
                 displayName    = deviceName.substringBefore("#"),
-                avatar         = list.getOrNull(index)?.avatar ?: "🧑", // preserve avatar from PRESENCE
-                bio            = list.getOrNull(index)?.bio    ?: "",   // preserve bio from PRESENCE
+                avatar         = list.getOrNull(index)?.avatar ?: "🧑",
+                bio            = list.getOrNull(index)?.bio    ?: "",
                 signalStrength = rssi,
                 lastSeen       = System.currentTimeMillis()
             )
@@ -271,22 +260,17 @@ class BluetoothChatManager(private val context: Context) {
         }
 
         override fun onScanFailed(errorCode: Int) {
-            Log.e(BLEConstants.TAG, "❌ Scan failed: $errorCode — restarting in 3s")
-            if (isScanning) {
-                scanHandler.postDelayed({ if (isScanning) doStartScan() }, 3_000)
-            }
+            Log.e(BLEConstants.TAG, "❌ Scan failed: $errorCode")
+            if (isScanning) scanHandler.postDelayed({ if (isScanning) doStartScan() }, 3_000)
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CONNECT TO DEVICE
+    // CONNECT / DISCONNECT
     // ─────────────────────────────────────────────────────────────────────────
     fun connectToDevice(deviceId: String) {
         if (!hasPermissions()) return
-        if (clientGatts.containsKey(deviceId)) {
-            Log.d(BLEConstants.TAG, "Already connected to $deviceId")
-            return
-        }
+        if (clientGatts.containsKey(deviceId)) return
         val device = bluetoothAdapter?.getRemoteDevice(deviceId) ?: return
         _connectionState.value = "Connecting..."
         val gatt = device.connectGatt(context, false, gattClientCallback)
@@ -304,44 +288,63 @@ class BluetoothChatManager(private val context: Context) {
             clientGatts.values.forEach { it.disconnect(); it.close() }
             clientGatts.clear()
         }
-        if (clientGatts.isEmpty() && connectedClients.isEmpty()) {
+        if (clientGatts.isEmpty() && connectedClients.isEmpty())
             _connectionState.value = "Disconnected"
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SEND MESSAGE (Mesh-aware)
+    // SEND MESSAGE
+    // messageId: caller supplies it so ChatScreen can track delivery by the same ID
     // ─────────────────────────────────────────────────────────────────────────
     fun sendMessage(
         encryptedText : String,
         myUsername    : String,
-        recipientId   : String = MeshMessage.BROADCAST
+        recipientId   : String = MeshMessage.BROADCAST,
+        messageId     : String = UUID.randomUUID().toString()
     ) {
         if (!hasPermissions()) return
 
         val msg = MeshMessage(
+            id               = messageId,
             senderId         = myAddress,
             senderName       = myUsername,
             recipientId      = recipientId,
             encryptedContent = encryptedText
         )
 
+        // Remember this ID — onCharacteristicWrite will ack it on success
+        pendingAckMessageId = messageId
+
         seenMessageIds.add(msg.id)
         transmitRaw(msg.toBytes(), skipAddress = null)
-        Log.d(BLEConstants.TAG, "📤 Sent to $recipientId (hop 0)")
+        Log.d(BLEConstants.TAG, "📤 Sent msg $messageId to $recipientId")
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SEND READ RECEIPT
+    // Called by ChatScreen when the user opens a chat and sees a message.
+    // encryptedContent carries the original message ID being acknowledged.
+    // ─────────────────────────────────────────────────────────────────────────
+    fun sendReadReceipt(originalMessageId: String, toUsername: String) {
+        if (!hasPermissions()) return
+        val receipt = MeshMessage(
+            senderId         = myFullUsername,
+            senderName       = myFullUsername,
+            recipientId      = toUsername,
+            encryptedContent = originalMessageId,   // original msg ID being ack'd
+            type             = MeshMessage.TYPE_READ_RECEIPT
+        )
+        seenMessageIds.add(receipt.id)
+        transmitRaw(receipt.toBytes(), skipAddress = null)
+        Log.d(BLEConstants.TAG, "📬 Sent read receipt for $originalMessageId to $toUsername")
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // ROUTE / RELAY
     // ─────────────────────────────────────────────────────────────────────────
     private fun routeMessage(msg: MeshMessage, receivedFromAddress: String) {
-        if (msg.hop >= msg.maxHops) {
-            Log.d(BLEConstants.TAG, "🛑 Max hops reached, dropping ${msg.id}")
-            return
-        }
-        val relayed = msg.copy(hop = msg.hop + 1)
-        Log.d(BLEConstants.TAG, "↪️ Relaying ${msg.id} hop ${relayed.hop}")
-        transmitRaw(relayed.toBytes(), skipAddress = receivedFromAddress)
+        if (msg.hop >= msg.maxHops) return
+        transmitRaw(msg.copy(hop = msg.hop + 1).toBytes(), skipAddress = receivedFromAddress)
     }
 
     private fun transmitRaw(bytes: ByteArray, skipAddress: String?) {
@@ -355,7 +358,6 @@ class BluetoothChatManager(private val context: Context) {
             char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             @Suppress("DEPRECATION")
             gatt.writeCharacteristic(char)
-            Log.d(BLEConstants.TAG, "📤 CLIENT write → $address")
         }
 
         val serverChar = gattServer
@@ -366,21 +368,18 @@ class BluetoothChatManager(private val context: Context) {
         connectedClients.forEach { device ->
             if (device.address == skipAddress) return@forEach
             gattServer?.notifyCharacteristicChanged(device, serverChar, false)
-            Log.d(BLEConstants.TAG, "📤 SERVER notify → ${device.address}")
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PRESENCE — send my avatar + bio + known peers to new connection
+    // PRESENCE — sends avatar + bio + known peers to new connection
     // ─────────────────────────────────────────────────────────────────────────
     private fun sendPresenceTo(gatt: android.bluetooth.BluetoothGatt) {
         if (!hasPermissions()) return
-
         val directPeers = _discoveredDevices.value
             .filter { it.reachType == ReachType.DIRECT }
             .map { it.username }
 
-        // Read my own avatar + bio so the other device can display my real profile
         val prefs    = context.getSharedPreferences("BluetoothChat", Context.MODE_PRIVATE)
         val myAvatar = prefs.getString("avatar", "🧑") ?: "🧑"
         val myBio    = prefs.getString("bio",    "")   ?: ""
@@ -405,7 +404,6 @@ class BluetoothChatManager(private val context: Context) {
             char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             @Suppress("DEPRECATION")
             gatt.writeCharacteristic(char)
-            Log.d(BLEConstants.TAG, "📋 Sent presence to ${gatt.device.address} | avatar=$myAvatar | peers=$directPeers")
         } catch (e: Exception) {
             Log.e(BLEConstants.TAG, "Presence send failed: ${e.message}")
         }
@@ -416,7 +414,7 @@ class BluetoothChatManager(private val context: Context) {
     // ─────────────────────────────────────────────────────────────────────────
     private fun processIncomingBytes(bytes: ByteArray, fromAddress: String) {
         val msg = MeshMessage.fromBytes(bytes) ?: run {
-            Log.w(BLEConstants.TAG, "⚠️ Could not parse message — packet may be truncated")
+            Log.w(BLEConstants.TAG, "⚠️ Could not parse message")
             return
         }
 
@@ -427,96 +425,88 @@ class BluetoothChatManager(private val context: Context) {
         seenMessageIds.add(msg.id)
 
         when {
-            // ── Presence: update sender's avatar/bio + add mesh peers ──────────
+            // ── PRESENCE ─────────────────────────────────────────────────────
             msg.type == MeshMessage.TYPE_PRESENCE -> {
-                Log.d(BLEConstants.TAG, "📋 Presence from ${msg.senderName}: avatar=${msg.avatar} bio=${msg.bio} peers=${msg.knownPeers}")
-
-                // Update sender's avatar + bio in the discovered list
                 val updatedList = _discoveredDevices.value.toMutableList()
-                val senderIndex = updatedList.indexOfFirst { it.username == msg.senderName }
-                if (senderIndex >= 0) {
-                    val existing = updatedList[senderIndex]
-                    updatedList[senderIndex] = existing.copy(
+                val idx = updatedList.indexOfFirst { it.username == msg.senderName }
+                if (idx >= 0) {
+                    val existing = updatedList[idx]
+                    updatedList[idx] = existing.copy(
                         avatar = msg.avatar.ifEmpty { existing.avatar },
                         bio    = msg.bio.ifEmpty    { existing.bio    }
                     )
                     _discoveredDevices.value = updatedList
-                    Log.d(BLEConstants.TAG, "✅ Updated profile for ${msg.senderName}")
                 }
-
-                // Add mesh-reachable peers we don't already know about
                 msg.knownPeers.forEach { peer ->
-                    if (peer != myFullUsername &&
-                        _discoveredDevices.value.none { it.username == peer }) {
-                        val meshDevice = DiscoveredDevice(
-                            id          = peer,
-                            username    = peer,
-                            displayName = peer.substringBefore("#"),
-                            avatar      = "🧑",
-                            reachType   = ReachType.MESH,
-                            viaDevice   = msg.senderName,
-                            lastSeen    = System.currentTimeMillis()
-                        )
+                    if (peer != myFullUsername && _discoveredDevices.value.none { it.username == peer }) {
                         val list = _discoveredDevices.value.toMutableList()
-                        list.add(meshDevice)
+                        list.add(DiscoveredDevice(
+                            id = peer, username = peer,
+                            displayName = peer.substringBefore("#"),
+                            reachType = ReachType.MESH, viaDevice = msg.senderName,
+                            lastSeen = System.currentTimeMillis()
+                        ))
                         _discoveredDevices.value = list
-                        Log.d(BLEConstants.TAG, "🌐 Mesh device added: $peer via ${msg.senderName}")
                     }
                 }
                 return
             }
 
-            // ── Broadcast ────────────────────────────────────────────────────
+            // ── READ RECEIPT — update the original sender's message to READ ──
+            msg.type == MeshMessage.TYPE_READ_RECEIPT && msg.recipientId == myFullUsername -> {
+                // msg.encryptedContent = original message ID being acknowledged
+                Log.d(BLEConstants.TAG, "📬 Read receipt for msg: ${msg.encryptedContent}")
+                _readReceipts.value = msg.encryptedContent
+                return
+            }
+
+            // ── BROADCAST ────────────────────────────────────────────────────
             msg.recipientId == MeshMessage.BROADCAST -> {
-                Log.d(BLEConstants.TAG, "📢 Broadcast from ${msg.senderName}")
                 appendBroadcastToUi(msg.encryptedContent, msg.id, msg.senderName)
                 NotificationHelper.showBroadcastNotification(
-                    context     = context,
-                    senderName  = msg.senderName,
-                    messageText = msg.encryptedContent
+                    context = context, senderName = msg.senderName, messageText = msg.encryptedContent
                 )
                 routeMessage(msg, receivedFromAddress = fromAddress)
                 return
             }
 
-            // ── Private message for me ────────────────────────────────────────
+            // ── PRIVATE — for me ──────────────────────────────────────────────
             msg.recipientId == myFullUsername -> {
-                Log.d(BLEConstants.TAG, "🔐 Private message for ME from ${msg.senderName}")
-                appendToUi(msg.encryptedContent, msg.id)
+                Log.d(BLEConstants.TAG, "🔐 Private msg from ${msg.senderName}")
+                appendToUi(msg.encryptedContent, msg.id, msg.senderName)
                 UnreadStore.markUnread(context, msg.senderName)
-                val senderTag = msg.senderName.substringAfter("#", "")
                 NotificationHelper.showPrivateMessageNotification(
                     context         = context,
                     senderName      = msg.senderName.substringBefore("#"),
                     senderAvatar    = "🧑",
                     contactFullName = msg.senderName,
                     deviceId        = fromAddress,
-                    contactTag      = senderTag
+                    contactTag      = msg.senderName.substringAfter("#", "")
                 )
                 return
             }
 
-            // ── Relay to others ───────────────────────────────────────────────
+            // ── RELAY ─────────────────────────────────────────────────────────
             else -> {
-                Log.d(BLEConstants.TAG, "🔁 Relaying message for ${msg.recipientId}")
                 routeMessage(msg, receivedFromAddress = fromAddress)
                 return
             }
         }
     }
 
-    private fun appendToUi(encryptedContent: String, messageId: String? = null) {
+    private fun appendToUi(encryptedContent: String, messageId: String? = null, senderName: String = "") {
         _receivedMessages.value += ChatMessage(
-            id     = messageId ?: java.util.UUID.randomUUID().toString(),
-            text   = encryptedContent,
-            isMine = false,
-            status = MessageStatus.DELIVERED
+            id         = messageId ?: UUID.randomUUID().toString(),
+            text       = encryptedContent,
+            isMine     = false,
+            senderName = senderName,
+            status     = MessageStatus.DELIVERED
         )
     }
 
     private fun appendBroadcastToUi(text: String, messageId: String? = null, senderName: String = "") {
         _broadcastMessages.value += ChatMessage(
-            id         = messageId ?: java.util.UUID.randomUUID().toString(),
+            id         = messageId ?: UUID.randomUUID().toString(),
             text       = text,
             isMine     = false,
             senderName = senderName,
@@ -534,9 +524,7 @@ class BluetoothChatManager(private val context: Context) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Log.d(BLEConstants.TAG, "✅ Client connected to ${gatt.device.address}")
                     _connectionState.value = "Connected"
-                    if (hasPermissions()) {
-                        gatt.requestMtu(512)
-                    }
+                    if (hasPermissions()) gatt.requestMtu(512)
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.d(BLEConstants.TAG, "🔌 Client disconnected from ${gatt.device.address}")
@@ -548,7 +536,6 @@ class BluetoothChatManager(private val context: Context) {
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-            Log.d(BLEConstants.TAG, "MTU changed to $mtu on ${gatt.device.address}")
             if (hasPermissions()) gatt.discoverServices()
         }
 
@@ -562,8 +549,22 @@ class BluetoothChatManager(private val context: Context) {
             descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             @Suppress("DEPRECATION")
             gatt.writeDescriptor(descriptor)
-            Log.d(BLEConstants.TAG, "✅ Notifications enabled on ${gatt.device.address}")
             sendPresenceTo(gatt)
+        }
+
+        // ── onCharacteristicWrite: BLE confirmed the write succeeded ──────────
+        // This is the REAL delivery confirmation — emit the pending message ID
+        // so ChatScreen can update its status from SENDING → SENT
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int
+        ) {
+            if (status == BluetoothGatt.GATT_SUCCESS && pendingAckMessageId.isNotEmpty()) {
+                Log.d(BLEConstants.TAG, "✅ BLE write confirmed for msg: $pendingAckMessageId")
+                _deliveredAcks.value = pendingAckMessageId
+                pendingAckMessageId  = ""
+            } else if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(BLEConstants.TAG, "❌ Write failed: $status")
+            }
         }
 
         override fun onCharacteristicChanged(
@@ -578,15 +579,6 @@ class BluetoothChatManager(private val context: Context) {
         ) {
             processIncomingBytes(characteristic.value ?: return, gatt.device.address)
         }
-
-        override fun onCharacteristicWrite(
-            gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int
-        ) {
-            if (status == BluetoothGatt.GATT_SUCCESS)
-                Log.d(BLEConstants.TAG, "✅ Write confirmed to ${gatt.device.address}")
-            else
-                Log.e(BLEConstants.TAG, "❌ Write failed: $status")
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -599,13 +591,11 @@ class BluetoothChatManager(private val context: Context) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     if (!connectedClients.contains(device)) connectedClients.add(device)
                     _connectionState.value = "Connected"
-                    Log.d(BLEConstants.TAG, "✅ Server: ${device.address} connected")
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     connectedClients.remove(device)
                     if (clientGatts.isEmpty() && connectedClients.isEmpty())
                         _connectionState.value = "Disconnected"
-                    Log.d(BLEConstants.TAG, "🔌 Server: ${device.address} disconnected")
                 }
             }
         }
@@ -628,7 +618,6 @@ class BluetoothChatManager(private val context: Context) {
             preparedWrite: Boolean, responseNeeded: Boolean,
             offset: Int, value: ByteArray
         ) {
-            Log.d(BLEConstants.TAG, "✅ ${device.address} enabled notifications")
             if (responseNeeded) {
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
             }
